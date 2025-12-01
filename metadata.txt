@@ -1,0 +1,26 @@
+[general]
+name=Clean Log
+qgisMinimumVersion=3.22
+qgisMaximumVersion=3.99
+description=Development tool that adds a clear button in the Message Log panel title bar
+about=A productivity tool for QGIS plugin developers. Integrates a clear button directly into the Message Log dock title bar, enabling rapid log cleanup during debugging and testing workflows. Native PyQt implementation with clean unload support.
+version=1.0.0
+author=yadda
+email=youcef.geodesien@gmail.com
+changelog=1.0.0 - Initial release with Message Log dock title bar integration
+
+[repository]
+repository=https://github.com/yadda07/clean_log
+
+category=Utilities
+icon=clean.png
+experimental=False
+deprecated=False
+
+tags=log,clean,utilities,message,journal,interface
+
+homepage=https://github.com/yadda07/clean_log
+tracker=https://github.com/yadda07/clean_log/issues
+
+hasProcessingProvider=no
+server=False
