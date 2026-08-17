@@ -35,8 +35,8 @@ changelog=
         - Recursive tab content clearing
         - Makefile aligned: packages core, ui, assets directories
     1.0.0 - Initial release with Message Log dock title bar integration
-repository=https://github.com/yadda07/clean_log
-tracker=https://github.com/yadda07/clean_log/issues
+repository=https://github.com/yadda07/log_cleaner
+tracker=https://github.com/yadda07/log_cleaner/issues
 
 category=Utilities
 icon=clean.svg
@@ -45,7 +45,7 @@ deprecated=False
 
 tags=log,clean,utilities,message,journal,interface,cache,developer
 
-homepage=https://github.com/yadda07/clean_log
+homepage=https://github.com/yadda07/log_cleaner
 
 hasProcessingProvider=no
 server=False
