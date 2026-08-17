@@ -1,17 +1,11 @@
 import logging
-import sys
 
 from qgis.core import QgsMessageLog, Qgis
 
 
-try:
-    _QGIS_INFO = Qgis.MessageLevel.Info
-    _QGIS_WARNING = Qgis.MessageLevel.Warning
-    _QGIS_CRITICAL = Qgis.MessageLevel.Critical
-except AttributeError:
-    _QGIS_INFO = Qgis.Info
-    _QGIS_WARNING = Qgis.Warning
-    _QGIS_CRITICAL = Qgis.Critical
+_QGIS_INFO = Qgis.MessageLevel.Info
+_QGIS_WARNING = Qgis.MessageLevel.Warning
+_QGIS_CRITICAL = Qgis.MessageLevel.Critical
 
 _LEVEL_MAP = {
     logging.DEBUG: _QGIS_INFO,
@@ -35,11 +29,7 @@ class QgisLogHandler(logging.Handler):
             qgis_level = _LEVEL_MAP.get(record.levelno, _QGIS_INFO)
             QgsMessageLog.logMessage(msg, self._tag, level=qgis_level)
         except Exception:
-            # Dernier recours : ne jamais perdre le log
-            try:
-                sys.stderr.write(f"LogCleaner_FALLBACK {record.getMessage()}\n")
-            except Exception:
-                pass
+            self.handleError(record)
 
 
 def setup_logging():

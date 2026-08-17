@@ -12,15 +12,8 @@ from .core.qgis_logging import setup_logging
 from .ui.animated_button import AnimatedCleanButton
 from .ui.animated_broom_button import AnimatedBroomButton
 
-try:
-    _WARNING_LEVEL = Qgis.MessageLevel.Warning
-except AttributeError:
-    _WARNING_LEVEL = Qgis.Warning
-
-try:
-    _QUEUED = Qt.QueuedConnection
-except AttributeError:
-    _QUEUED = Qt.ConnectionType.QueuedConnection
+_WARNING_LEVEL = Qgis.MessageLevel.Warning
+_QUEUED = Qt.ConnectionType.QueuedConnection
 
 _ATTACH_RESULT_ATTACHED = "attached"
 _ATTACH_RESULT_FAILED = "failed"
@@ -146,8 +139,12 @@ class CleanLogs(QObject):
                     self._dock_visibility_conn = dock.visibilityChanged.connect(
                         self._on_dock_visibility_changed
                     )
-                except (RuntimeError, AttributeError):
-                    pass
+                except (RuntimeError, AttributeError) as exc:
+                    logger.warning(
+                        "dock_visibility_connect_failed error=%s reason=%s "
+                        "consequence=titlebar_reinjection_disabled",
+                        type(exc).__name__, exc
+                    )
 
             # Save original titlebar for restoration
             self.original_titlebar = self._remove_plugin_titlebar()
@@ -182,13 +179,20 @@ class CleanLogs(QObject):
             if current is None or current.objectName() != _TITLEBAR_OBJECT_NAME:
                 self._attach_attempts = 0
                 self._retry_add_button()
-        except (RuntimeError, AttributeError):
-            pass
+        except (RuntimeError, AttributeError) as exc:
+            logger.debug(
+                "dock_visibility_check_skipped error=%s reason=%s",
+                type(exc).__name__, exc
+            )
 
     def _remove_plugin_titlebar(self):
         try:
             current_titlebar = self.msg_dock.titleBarWidget()
-        except (RuntimeError, AttributeError):
+        except (RuntimeError, AttributeError) as exc:
+            logger.debug(
+                "titlebar_read_failed error=%s reason=%s",
+                type(exc).__name__, exc
+            )
             return None
         if current_titlebar and current_titlebar.objectName() == _TITLEBAR_OBJECT_NAME:
             self.msg_dock.setTitleBarWidget(None)
@@ -200,8 +204,10 @@ class CleanLogs(QObject):
         for old_btn in self._clean_buttons:
             try:
                 old_btn.clicked.disconnect()
-            except TypeError:
-                pass
+            except TypeError as exc:
+                logger.debug(
+                    "button_disconnect_noop stage=titlebar_rebuild reason=%s", exc
+                )
             old_btn.deleteLater()
         self._clean_buttons = []
         self._button_slots = {}
@@ -286,8 +292,10 @@ class CleanLogs(QObject):
         try:
             button.stop_animation()
             button.setEnabled(True)
-        except RuntimeError:
-            pass
+        except RuntimeError as exc:
+            logger.debug(
+                "button_gone stage=clean_finished reason=%s", exc
+            )
         if result.success:
             logger.debug(
                 "_on_clean_finished label=%s success=%s elapsed_ms=%s",
@@ -315,12 +323,12 @@ class CleanLogs(QObject):
         """Nettoie le thread et le worker après exécution (appelé depuis thread.finished)."""
         try:
             worker.deleteLater()
-        except RuntimeError:
-            pass
+        except RuntimeError as exc:
+            logger.debug("worker_already_deleted stage=cleanup_thread reason=%s", exc)
         try:
             thread.deleteLater()
-        except RuntimeError:
-            pass
+        except RuntimeError as exc:
+            logger.debug("thread_already_deleted stage=cleanup_thread reason=%s", exc)
         if self._active_task is not None:
             t, w = self._active_task
             if t is thread and w is worker:
@@ -334,8 +342,11 @@ class CleanLogs(QObject):
         if self._dock_visibility_conn is not None and self.msg_dock is not None:
             try:
                 self.msg_dock.visibilityChanged.disconnect(self._dock_visibility_conn)
-            except (RuntimeError, TypeError, AttributeError):
-                pass
+            except (RuntimeError, TypeError, AttributeError) as exc:
+                logger.debug(
+                    "dock_visibility_disconnect_noop error=%s reason=%s",
+                    type(exc).__name__, exc
+                )
             self._dock_visibility_conn = None
 
         # Stop active worker gracefully
@@ -348,13 +359,16 @@ class CleanLogs(QObject):
                         logger.warning("unload_thread_join_timeout ms=%s", _WORKER_JOIN_MS)
                         thread.terminate()
                         thread.wait(1000)
-            except RuntimeError:
-                pass
+            except RuntimeError as exc:
+                logger.warning(
+                    "unload_thread_stop_failed error=%s reason=%s",
+                    type(exc).__name__, exc
+                )
             finally:
                 try:
                     thread.deleteLater()
-                except RuntimeError:
-                    pass
+                except RuntimeError as exc:
+                    logger.debug("thread_already_deleted stage=unload reason=%s", exc)
                 self._active_task = None
 
         self._cleaning_in_progress = False
@@ -375,8 +389,10 @@ class CleanLogs(QObject):
             for btn in self._clean_buttons:
                 try:
                     btn.clicked.disconnect()
-                except TypeError:
-                    pass
+                except TypeError as exc:
+                    logger.debug(
+                        "button_disconnect_noop stage=unload reason=%s", exc
+                    )
                 btn.deleteLater()
             self._clean_buttons = []
             self._button_slots = {}
@@ -403,7 +419,10 @@ class CleanLogs(QObject):
                 )
                 logger.warning("fallback_error_displayed msg=%s", msg)
                 return
-        except (RuntimeError, AttributeError):
-            pass
+        except (RuntimeError, AttributeError) as exc:
+            logger.debug(
+                "message_bar_unavailable error=%s reason=%s",
+                type(exc).__name__, exc
+            )
         # Fallback absolu
         logger.warning("LogCleaner_CRITICAL %s", msg)

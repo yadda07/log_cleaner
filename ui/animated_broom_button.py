@@ -5,17 +5,9 @@ import os
 import math
 import re
 
-try:
-    _TRANSPARENT = Qt.GlobalColor.transparent
-except AttributeError:
-    _TRANSPARENT = Qt.transparent
-
-try:
-    _ANTIALIAS = QPainter.RenderHint.Antialiasing
-    _SMOOTH_TRANSFORM = QPainter.RenderHint.SmoothPixmapTransform
-except AttributeError:
-    _ANTIALIAS = QPainter.Antialiasing
-    _SMOOTH_TRANSFORM = QPainter.SmoothPixmapTransform
+_TRANSPARENT = Qt.GlobalColor.transparent
+_ANTIALIAS = QPainter.RenderHint.Antialiasing
+_SMOOTH_TRANSFORM = QPainter.RenderHint.SmoothPixmapTransform
 
 
 class AnimatedBroomButton(QToolButton):

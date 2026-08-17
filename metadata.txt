@@ -4,10 +4,17 @@ qgisMinimumVersion=3.28
 qgisMaximumVersion=4.99
 description=Development tool that adds clear buttons in the Message Log panel title bar for logs and Python bytecode cache
 about=A productivity tool for QGIS plugin developers. Integrates clear buttons directly into the Message Log dock title bar, enabling rapid log cleanup and removal of the compiled Python bytecode cache of the whole current profile (plugins, expressions, processing scripts) during debugging and testing workflows. Native PyQt implementation with clean unload support.
-version=2.2.0
+version=2.2.1
 author=yadda
 email=youcef.geodesien@gmail.com
 changelog=
+    2.2.1 - Qt6 compatibility and logging robustness:
+        - Every Qt and QGIS enum is now fully qualified: Qt.ConnectionType.QueuedConnection, Qt.GlobalColor.transparent, QPainter.RenderHint.Antialiasing, QPainter.RenderHint.SmoothPixmapTransform, Qgis.MessageLevel.Info/Warning/Critical
+        - Removed the try/except AttributeError enum fallbacks: the qualified form is valid on both PyQt5 and PyQt6, verified on QGIS 3.40.15 and 4.0.3
+        - Log handler failures now go through logging.Handler.handleError instead of being swallowed by a silent except/pass
+        - The twelve silent except/pass and except/return None blocks of clean_log.py now state their reason: DEBUG for expected Qt teardown races, WARNING when a feature is lost (titlebar reinjection) or a worker thread fails to stop
+        - ui/animated_button.py re-encoded as UTF-8 without BOM, with double-encoded accents repaired
+        - tracker url now points to the issue form, the only GitHub issue url that answers to non-browser clients
     2.2.0 - Profile-wide cache cleaning:
         - Cache scope extended from python/plugins to the whole current profile: python/ (plugins, expressions, startup) and processing/
         - Directory junctions and symlinks are followed, with loop protection by device/inode identity

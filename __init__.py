@@ -6,7 +6,7 @@ except Exception as exc:
     QgsMessageLog.logMessage(
         f"LogCleaner classFactory import_failed error={type(exc).__name__}: {exc}",
         "LogCleaner",
-        level=Qgis.Critical
+        level=Qgis.MessageLevel.Critical
     )
     raise
 
@@ -18,6 +18,6 @@ def classFactory(iface):
         QgsMessageLog.logMessage(
             f"LogCleaner classFactory init_failed error={type(exc).__name__}: {exc}",
             "LogCleaner",
-            level=Qgis.Critical
+            level=Qgis.MessageLevel.Critical
         )
         raise

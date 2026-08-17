@@ -1,21 +1,13 @@
-﻿from qgis.PyQt.QtWidgets import QToolButton
+from qgis.PyQt.QtWidgets import QToolButton
 from qgis.PyQt.QtGui import QIcon, QPixmap, QPainter
 from qgis.PyQt.QtCore import QTimer, Qt
 import os
 import math
 import re
 
-try:
-    _TRANSPARENT = Qt.GlobalColor.transparent
-except AttributeError:
-    _TRANSPARENT = Qt.transparent
-
-try:
-    _ANTIALIAS = QPainter.RenderHint.Antialiasing
-    _SMOOTH_TRANSFORM = QPainter.RenderHint.SmoothPixmapTransform
-except AttributeError:
-    _ANTIALIAS = QPainter.Antialiasing
-    _SMOOTH_TRANSFORM = QPainter.SmoothPixmapTransform
+_TRANSPARENT = Qt.GlobalColor.transparent
+_ANTIALIAS = QPainter.RenderHint.Antialiasing
+_SMOOTH_TRANSFORM = QPainter.RenderHint.SmoothPixmapTransform
 
 
 class AnimatedCleanButton(QToolButton):
@@ -80,13 +72,13 @@ class AnimatedCleanButton(QToolButton):
 
     @staticmethod
     def _validate_accent_color(value):
-        """Valide et normalise une couleur hexadÃ©cimale."""
+        """Valide et normalise une couleur hexadécimale."""
         if isinstance(value, str) and re.fullmatch(r"^#[0-9A-Fa-f]{6}$", value):
             return value
         return "#8CC63F"
 
     def start_animation(self):
-        """DÃ©marre l'animation de poubelle."""
+        """Démarre l'animation de poubelle."""
         if self.is_animating:
             return
 
@@ -107,7 +99,7 @@ class AnimatedCleanButton(QToolButton):
         # Dessiner le corps (fixe)
         painter.drawPixmap(0, 0, self.base_pixmap)
 
-        # Point de pivot pour le couvercle (en haut Ã  droite pour donner l'effet d'ouverture)
+        # Point de pivot pour le couvercle (en haut à droite pour donner l'effet d'ouverture)
         pivot_x = self.lid_pixmap.width() * 0.8
         pivot_y = self.lid_pixmap.height() * 0.2
 
@@ -115,14 +107,14 @@ class AnimatedCleanButton(QToolButton):
         painter.rotate(angle)
         painter.translate(-pivot_x, -pivot_y)
 
-        # Dessiner le couvercle (animÃ©)
+        # Dessiner le couvercle (animé)
         painter.drawPixmap(0, 0, self.lid_pixmap)
 
         painter.end()
         return QIcon(canvas)
 
     def stop_animation(self):
-        """ArrÃªte l'animation et rÃ©initialise l'icÃ´ne sans toucher enabled."""
+        """Arrête l'animation et réinitialise l'icône sans toucher enabled."""
         if not self.is_animating:
             return
         self.animation_timer.stop()
@@ -130,7 +122,7 @@ class AnimatedCleanButton(QToolButton):
         self.is_animating = False
 
     def _update_icon(self):
-        """Met Ã  jour l'icÃ´ne pour simuler l'ouverture/fermeture du couvercle."""
+        """Met à jour l'icône pour simuler l'ouverture/fermeture du couvercle."""
         self.current_frame += 1
 
         if self.current_frame > self.total_frames:
@@ -139,12 +131,12 @@ class AnimatedCleanButton(QToolButton):
             self.is_animating = False
             return
 
-        # Calcul de l'angle (Ouverture jusqu'Ã  45 degrÃ©s, puis fermeture)
+        # Calcul de l'angle (Ouverture jusqu'à 45 degrés, puis fermeture)
         progress = self.current_frame / self.total_frames
 
-        # Une courbe sinusoÃ¯dale : commence Ã  0, monte Ã  1 Ã  mi-chemin, redescend Ã  0
+        # Une courbe sinusoïdale : commence à 0, monte à 1 à mi-chemin, redescend à 0
         curve = math.sin(progress * math.pi)
-        angle = curve * 45  # Le couvercle s'ouvre Ã  45 degrÃ©s max
+        angle = curve * 45  # Le couvercle s'ouvre à 45 degrés max
 
         self.setIcon(self._create_frame(angle))
 
