@@ -36,7 +36,7 @@ changelog=
         - Makefile aligned: packages core, ui, assets directories
     1.0.0 - Initial release with Message Log dock title bar integration
 repository=https://github.com/yadda07/log_cleaner
-tracker=https://github.com/yadda07/log_cleaner/issues
+tracker=https://github.com/yadda07/log_cleaner/issues/new
 
 category=Utilities
 icon=clean.svg
