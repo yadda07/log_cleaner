@@ -1,26 +1,51 @@
 [general]
-name=Clean Log
-qgisMinimumVersion=3.22
-qgisMaximumVersion=3.99
-description=Development tool that adds a clear button in the Message Log panel title bar
-about=A productivity tool for QGIS plugin developers. Integrates a clear button directly into the Message Log dock title bar, enabling rapid log cleanup during debugging and testing workflows. Native PyQt implementation with clean unload support.
-version=1.0.0
+name=Log Cleaner
+qgisMinimumVersion=3.28
+qgisMaximumVersion=4.99
+description=Development tool that adds clear buttons in the Message Log panel title bar for logs and Python bytecode cache
+about=A productivity tool for QGIS plugin developers. Integrates clear buttons directly into the Message Log dock title bar, enabling rapid log cleanup and removal of the compiled Python bytecode cache of the whole current profile (plugins, expressions, processing scripts) during debugging and testing workflows. Native PyQt implementation with clean unload support.
+version=2.2.0
 author=yadda
 email=youcef.geodesien@gmail.com
-changelog=1.0.0 - Initial release with Message Log dock title bar integration
-
-[repository]
+changelog=
+    2.2.0 - Profile-wide cache cleaning:
+        - Cache scope extended from python/plugins to the whole current profile: python/ (plugins, expressions, startup) and processing/
+        - Directory junctions and symlinks are followed, with loop protection by device/inode identity
+        - Read-only bytecode is now deleted after clearing the read-only attribute
+        - Removes .pyo files and leftovers from interrupted CPython writes (module.pyc.<pid>)
+        - Own __pycache__ is no longer skipped: it is safe to delete since bytecode inside __pycache__ is never importable without its source
+        - Directories left in place are counted, shown in the status message and logged with their exact reason
+        - Locked files (real failures) are reported separately from foreign content (kept on purpose)
+        - Reported path lists are capped to keep memory bounded
+        - New core/cache_paths.py: scan root resolution and __pycache__ enumeration
+        - 24 regression tests covering scope, junctions, read-only, locked files and foreign content
+    2.1.0 - Plugin cache cleaning:
+        - Added PluginCacheCleaner to remove __pycache__ directories across python/plugins
+        - Refactored core into Strategy pattern: base_cleaner, log_cleaner, cache_cleaner
+        - Title bar now hosts two animated buttons (Log + Cache)
+        - Self-protects: never deletes its own __pycache__ during execution
+        - Structured logging with module-level loggers (zero print statements)
+    2.0.0 - Modular architecture rewrite:
+        - Separated business logic (core/cleaner.py) from UI (ui/animated_button.py)
+        - Animated trash button with SVG lid open/close animation
+        - Retry mechanism for title bar attachment (20 attempts, 500ms interval)
+        - Custom DockTitleBar forwarding mouse events to Qt dock behavior
+        - Cleaner no longer depends on global qgis.utils.iface
+        - Deterministic native title bar restoration on unload
+        - Recursive tab content clearing
+        - Makefile aligned: packages core, ui, assets directories
+    1.0.0 - Initial release with Message Log dock title bar integration
 repository=https://github.com/yadda07/clean_log
+tracker=https://github.com/yadda07/clean_log/issues
 
 category=Utilities
-icon=clean.png
+icon=clean.svg
 experimental=False
 deprecated=False
 
-tags=log,clean,utilities,message,journal,interface
+tags=log,clean,utilities,message,journal,interface,cache,developer
 
 homepage=https://github.com/yadda07/clean_log
-tracker=https://github.com/yadda07/clean_log/issues
 
 hasProcessingProvider=no
 server=False

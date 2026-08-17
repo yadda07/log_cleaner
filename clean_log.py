@@ -1,237 +1,409 @@
-from qgis.PyQt.QtCore import QObject
-from qgis.PyQt.QtWidgets import (
-    QDockWidget, QTabWidget, QPushButton, QWidget, 
-    QHBoxLayout, QLabel, QTextEdit, QListWidget, QTreeWidget
-)
-from qgis.PyQt.QtGui import QIcon
-from qgis.utils import iface
+import logging
+from functools import partial
+
+from qgis.PyQt.QtCore import QObject, QTimer, QThread, Qt, pyqtSignal
+from qgis.PyQt.QtWidgets import QWidget, QHBoxLayout, QLabel, QPushButton
 from qgis.core import Qgis
-import os
+
+from .core.base_cleaner import CleanResult
+from .core.log_cleaner import find_message_log_dock, MessageLogCleaner
+from .core.cache_cleaner import PluginCacheCleaner
+from .core.qgis_logging import setup_logging
+from .ui.animated_button import AnimatedCleanButton
+from .ui.animated_broom_button import AnimatedBroomButton
+
+try:
+    _WARNING_LEVEL = Qgis.MessageLevel.Warning
+except AttributeError:
+    _WARNING_LEVEL = Qgis.Warning
+
+try:
+    _QUEUED = Qt.QueuedConnection
+except AttributeError:
+    _QUEUED = Qt.ConnectionType.QueuedConnection
+
+_ATTACH_RESULT_ATTACHED = "attached"
+_ATTACH_RESULT_FAILED = "failed"
+_ATTACH_RESULT_RETRY = "retry"
+_ATTACH_INTERVAL_MS = 500
+_MAX_ATTACH_ATTEMPTS = 20
+_TITLEBAR_OBJECT_NAME = "CleanLogTitleBar"
+_WORKER_JOIN_MS = 5000
+
+logger = logging.getLogger(__name__)
 
 
-class MessageLogCleaner:
-    """Business logic for QGIS message log cleanup operations."""
-    
-    @staticmethod
-    def find_message_log_dock():
-        """Locate the QGIS Message Log dock widget.
-        
-        Searches for the dock by objectName first, then falls back to 
-        widget type inspection for robustness across QGIS locales.
-        
-        Returns:
-            QDockWidget: The Message Log dock if found, None otherwise.
-        """
-        main_window = iface.mainWindow()
-        for dock in main_window.findChildren(QDockWidget):
-            # Primary: recognition by objectName
-            obj_name = dock.objectName()
-            if obj_name in ("MessageLog", "MessageLogDock"):
-                return dock
-            
-            # Fallback: check if dock contains MessageLog TabWidget
-            if dock.findChild(QTabWidget, "MessageLog"):
-                return dock
-        return None
-    
-    @staticmethod
-    def find_message_log_widget():
-        """Locate the Message Log TabWidget by objectName or parent relationship.
-        
-        Uses objectName as primary method, with fallback to finding TabWidget
-        inside the MessageLog dock for robustness.
-        
-        Returns:
-            QTabWidget: The Message Log TabWidget if found, None otherwise.
-        """
-        main_window = iface.mainWindow()
-        
-        # Primary: direct search by objectName
-        for widget in main_window.findChildren(QTabWidget):
-            if widget.objectName() == "MessageLog":
-                return widget
-        
-        # Fallback: find TabWidget inside MessageLog dock
-        dock = MessageLogCleaner.find_message_log_dock()
-        if dock:
-            tab_widget = dock.findChild(QTabWidget)
-            if tab_widget:
-                return tab_widget
-        
-        return None
-    
-    @staticmethod
-    def clear_widget_content(widget):
-        """Clear content from a widget using available methods.
-        
-        Attempts to clear via clear() or clearMessages() methods,
-        then falls back to clearing child widgets.
-        
-        Args:
-            widget: Qt widget to clear content from.
-        """
-        if hasattr(widget, 'clear'):
-            widget.clear()
-        elif hasattr(widget, 'clearMessages'):
-            widget.clearMessages()
-        else:
-            # Fallback: search children
-            for child in widget.findChildren((QTextEdit, QListWidget, QTreeWidget)):
-                if hasattr(child, 'clear'):
-                    child.clear()
+class CleanWorker(QObject):
+    """Worker exécutant un Cleaner dans un thread séparé."""
+
+    finished = pyqtSignal(object)
+
+    def __init__(self, cleaner):
+        super().__init__()
+        self._cleaner = cleaner
+
+    def run(self):
+        try:
+            result = self._cleaner.clean()
+        except Exception as exc:
+            result = CleanResult(
+                success=False,
+                message=f"Exception: {type(exc).__name__}: {exc}"
+            )
+        self.finished.emit(result)
+
+
+class DockTitleBar(QWidget):
+    """Titlebar personnalisée qui ne bloque pas le double-clic natif."""
+
+    def mouseDoubleClickEvent(self, event):
+        event.ignore()
 
 
 class CleanLogs(QObject):
     """QGIS plugin for message log cleanup.
-    
-    Integrates a clear button directly into the Message Log dock title bar,
+
+    Integrates an animated clear button directly into the Message Log dock title bar,
     providing quick access to log cleanup functionality for developers.
     """
-    
+
     def __init__(self, iface_ref):
-        """Initialize plugin instance.
-        
-        Args:
-            iface_ref: QGIS interface reference.
-        """
+        """Initialize plugin instance."""
         super().__init__()
         self.iface = iface_ref
         self.msg_dock = None
-        self.custom_btn = None
+        self._cleaners = []
+        self._clean_buttons = []
+        self._active_task = None  # (thread, worker) ou None
         self.close_btn = None
         self.original_titlebar = None
+        self.titlebar_widget = None
+        self._attach_attempts = 0
+        self._attach_timer = QTimer(self)
+        self._attach_timer.timeout.connect(self._retry_add_button)
+        self._attach_timer.setInterval(_ATTACH_INTERVAL_MS)
+        self._cleaning_in_progress = False
+        self._button_slots = {}
+        self._dock_visibility_conn = None
 
     def initGui(self):
         """Initialize plugin GUI components."""
-        self._add_button_to_dock()
+        setup_logging()
+        self._attach_attempts = 0
+        self._setup_cleaners()
+        self._retry_add_button()
+
+    def _setup_cleaners(self):
+        if self._cleaners:
+            return
+        mw = self.iface.mainWindow()
+        if not mw:
+            return
+        self._cleaners = [
+            MessageLogCleaner(mw),
+            PluginCacheCleaner(),
+        ]
+
+    def _retry_add_button(self):
+        if self._attach_attempts >= _MAX_ATTACH_ATTEMPTS:
+            self._attach_timer.stop()
+            self._fallback_error(
+                "CleanLogs._add_button_to_dock",
+                "Failed to add button after multiple attempts"
+            )
+            return
+        attach_result = self._add_button_to_dock()
+        if attach_result == _ATTACH_RESULT_ATTACHED:
+            self._attach_timer.stop()
+            return
+        if attach_result == _ATTACH_RESULT_FAILED:
+            self._attach_timer.stop()
+            return
+        self._attach_attempts += 1
+        if not self._attach_timer.isActive():
+            self._attach_timer.start()
 
     def _add_button_to_dock(self):
-        """Add custom buttons to Message Log dock title bar.
-        
-        Creates a custom title bar widget containing the dock title,
-        a clear button, and a close button.
-        """
+        """Add custom buttons to Message Log dock title bar."""
         try:
-            # Locate dock
-            self.msg_dock = MessageLogCleaner.find_message_log_dock()
-            if not self.msg_dock:
-                self._fallback_error(
-                    "CleanLogs._add_button_to_dock", 
-                    "MessageLog dock not found"
-                )
-                return
-            
+            self._setup_cleaners()
+            if not self._cleaners:
+                return _ATTACH_RESULT_RETRY
+
+            mw = self.iface.mainWindow()
+            if not mw:
+                return _ATTACH_RESULT_RETRY
+
+            dock = find_message_log_dock(mw)
+            if not dock:
+                return _ATTACH_RESULT_RETRY
+
+            self.msg_dock = dock
+
+            # Connect visibilityChanged for reinjection (C3 fix)
+            if self._dock_visibility_conn is None:
+                try:
+                    self._dock_visibility_conn = dock.visibilityChanged.connect(
+                        self._on_dock_visibility_changed
+                    )
+                except (RuntimeError, AttributeError):
+                    pass
+
             # Save original titlebar for restoration
-            self.original_titlebar = self.msg_dock.titleBarWidget()
-            
+            self.original_titlebar = self._remove_plugin_titlebar()
+
             # Get dock title
             dock_title = self.msg_dock.windowTitle()
-            
+
             # Create custom titlebar container
-            titlebar_widget = QWidget()
-            layout = QHBoxLayout(titlebar_widget)
-            layout.setContentsMargins(4, 2, 4, 2)
-            layout.setSpacing(4)
-            
-            # Title label
-            title_label = QLabel(dock_title)
-            title_label.setStyleSheet("font-weight: bold;")
-            layout.addWidget(title_label)
-            
-            # Elastic spacer
-            layout.addStretch()
-            
-            # Clear button
-            icon_path = os.path.join(os.path.dirname(__file__), "clean.png")
-            self.custom_btn = QPushButton()
-            self.custom_btn.setIcon(QIcon(icon_path))
-            self.custom_btn.setToolTip("Clear message log")
-            self.custom_btn.setFlat(True)
-            self.custom_btn.setMaximumSize(24, 24)
-            self.custom_btn.clicked.connect(self.clear_log)
-            layout.addWidget(self.custom_btn)
-            
-            # Close button
-            self.close_btn = QPushButton("✕")
-            self.close_btn.setToolTip("Close panel")
-            self.close_btn.setFlat(True)
-            self.close_btn.setMaximumSize(24, 24)
-            self.close_btn.setStyleSheet("QPushButton { font-size: 16px; font-weight: bold; }")
-            self.close_btn.clicked.connect(self.msg_dock.hide)
-            layout.addWidget(self.close_btn)
-            
+            titlebar_widget = self._build_titlebar(dock_title)
+
             # Apply custom titlebar
-            self.msg_dock.setTitleBarWidget(titlebar_widget)
-            
+            self.titlebar_widget = titlebar_widget
+            self.msg_dock.setTitleBarWidget(self.titlebar_widget)
+            return _ATTACH_RESULT_ATTACHED
+
         except (RuntimeError, AttributeError) as e:
             self._fallback_error(
-                "CleanLogs._add_button_to_dock", 
-                f"Failed to add button: {type(e).__name__}", 
+                "CleanLogs._add_button_to_dock",
+                f"Failed to add button: {type(e).__name__}",
                 str(e)
             )
+            return _ATTACH_RESULT_FAILED
+
+    def _on_dock_visibility_changed(self, visible):
+        """Réinjecte le bouton si QGIS a restauré le titlebar natif (C3)."""
+        if not visible:
+            return
+        if self.msg_dock is None:
+            return
+        try:
+            current = self.msg_dock.titleBarWidget()
+            if current is None or current.objectName() != _TITLEBAR_OBJECT_NAME:
+                self._attach_attempts = 0
+                self._retry_add_button()
+        except (RuntimeError, AttributeError):
+            pass
+
+    def _remove_plugin_titlebar(self):
+        try:
+            current_titlebar = self.msg_dock.titleBarWidget()
+        except (RuntimeError, AttributeError):
+            return None
+        if current_titlebar and current_titlebar.objectName() == _TITLEBAR_OBJECT_NAME:
+            self.msg_dock.setTitleBarWidget(None)
+            current_titlebar.deleteLater()
+            return None
+        return current_titlebar
+
+    def _build_titlebar(self, dock_title):
+        for old_btn in self._clean_buttons:
+            try:
+                old_btn.clicked.disconnect()
+            except TypeError:
+                pass
+            old_btn.deleteLater()
+        self._clean_buttons = []
+        self._button_slots = {}
+        titlebar_widget = DockTitleBar()
+        titlebar_widget.setObjectName(_TITLEBAR_OBJECT_NAME)
+        layout = QHBoxLayout(titlebar_widget)
+        layout.setContentsMargins(4, 2, 4, 2)
+        layout.setSpacing(4)
+        title_label = QLabel(dock_title)
+        title_label.setStyleSheet("font-weight: bold;")
+        layout.addWidget(title_label)
+        layout.addStretch()
+        for cleaner in self._cleaners:
+            if cleaner.icon_type == "trash":
+                btn = AnimatedCleanButton(accent_color="#8CC63F")
+            else:
+                btn = AnimatedBroomButton(accent_color="#F5A623")
+            btn.setToolTip(cleaner.tooltip)
+            slot = partial(self._on_button_clicked, btn, cleaner)
+            btn.clicked.connect(slot)
+            self._button_slots[btn] = slot
+            layout.addWidget(btn)
+            self._clean_buttons.append(btn)
+        self.close_btn = QPushButton("x")
+        self.close_btn.setToolTip("Close panel")
+        self.close_btn.setFlat(True)
+        self.close_btn.setMaximumSize(24, 24)
+        self.close_btn.setStyleSheet(
+            "QPushButton { font-size: 14px; font-weight: bold; border: none; background: transparent; }"
+            " QPushButton:hover { color: #3daee9; }"
+        )
+        self.close_btn.clicked.connect(self.msg_dock.hide)
+        layout.addWidget(self.close_btn)
+        return titlebar_widget
+
+    def _on_button_clicked(self, button, cleaner, checked=False):
+        """Slot découplé du lambda (évite fuite de référence circulaire)."""
+        self._execute_clean(button, cleaner)
+
+    def _execute_clean(self, button, cleaner):
+        """Execute cleanup operation and trigger animation."""
+        logger.debug(
+            "_execute_clean START label=%s thread_safe=%s",
+            cleaner.label, cleaner.thread_safe
+        )
+        if self._cleaning_in_progress:
+            logger.debug("_execute_clean SKIP cleaning_in_progress")
+            return
+        self._cleaning_in_progress = True
+        button.start_animation()
+        if not cleaner.thread_safe:
+            try:
+                result = cleaner.clean()
+            except Exception as exc:
+                result = CleanResult(
+                    success=False,
+                    message=f"Exception: {type(exc).__name__}: {exc}"
+                )
+            self._on_clean_finished(button, cleaner, result)
+            return
+
+        thread = QThread()
+        worker = CleanWorker(cleaner)
+        worker.moveToThread(thread)
+
+        thread.started.connect(worker.run, _QUEUED)
+        worker.finished.connect(thread.quit, _QUEUED)
+        worker.finished.connect(
+            lambda result, b=button, c=cleaner: self._on_clean_finished(b, c, result),
+            _QUEUED
+        )
+        thread.finished.connect(
+            lambda t=thread, w=worker: self._cleanup_thread(t, w),
+            _QUEUED
+        )
+
+        self._active_task = (thread, worker)
+        thread.start()
+
+    def _on_clean_finished(self, button, cleaner, result):
+        """Appelé dans le GUI thread quand le nettoyage termine."""
+        try:
+            button.stop_animation()
+            button.setEnabled(True)
+        except RuntimeError:
+            pass
+        if result.success:
+            logger.debug(
+                "_on_clean_finished label=%s success=%s elapsed_ms=%s",
+                cleaner.label, result.success, result.elapsed_ms
+            )
+            status_bar = self.iface.statusBarIface()
+            if status_bar:
+                status_bar.showMessage(
+                    f"{cleaner.label}: {result.message}", 3000
+                )
+            else:
+                logger.warning("Status bar not available")
+        else:
+            logger.warning(
+                "_on_clean_finished label=%s failed msg=%s elapsed_ms=%s",
+                cleaner.label, result.message, result.elapsed_ms
+            )
+            self._fallback_error(
+                "CleanLogs._execute_clean",
+                f"{cleaner.label} cleanup failed: {result.message}"
+            )
+        self._cleaning_in_progress = False
+
+    def _cleanup_thread(self, thread, worker):
+        """Nettoie le thread et le worker après exécution (appelé depuis thread.finished)."""
+        try:
+            worker.deleteLater()
+        except RuntimeError:
+            pass
+        try:
+            thread.deleteLater()
+        except RuntimeError:
+            pass
+        if self._active_task is not None:
+            t, w = self._active_task
+            if t is thread and w is worker:
+                self._active_task = None
 
     def unload(self):
-        """Clean up plugin resources on unload.
-        
-        Restores original dock title bar and releases all Qt widget references.
-        """
+        """Clean up plugin resources on unload."""
+        self._attach_timer.stop()
+
+        # Disconnect dock visibility signal
+        if self._dock_visibility_conn is not None and self.msg_dock is not None:
+            try:
+                self.msg_dock.visibilityChanged.disconnect(self._dock_visibility_conn)
+            except (RuntimeError, TypeError, AttributeError):
+                pass
+            self._dock_visibility_conn = None
+
+        # Stop active worker gracefully
+        if self._active_task is not None:
+            thread, _ = self._active_task
+            try:
+                if thread.isRunning():
+                    thread.quit()
+                    if not thread.wait(_WORKER_JOIN_MS):
+                        logger.warning("unload_thread_join_timeout ms=%s", _WORKER_JOIN_MS)
+                        thread.terminate()
+                        thread.wait(1000)
+            except RuntimeError:
+                pass
+            finally:
+                try:
+                    thread.deleteLater()
+                except RuntimeError:
+                    pass
+                self._active_task = None
+
+        self._cleaning_in_progress = False
+
         try:
-            if self.msg_dock is not None and self.original_titlebar is not None:
-                # Restore original titlebar
+            if self.msg_dock is not None:
+                current_titlebar = self.msg_dock.titleBarWidget()
                 self.msg_dock.setTitleBarWidget(self.original_titlebar)
-            
-        except (RuntimeError, AttributeError):
-            # Intentional: cleanup must not raise during plugin unload
-            pass
+                if current_titlebar and current_titlebar.objectName() == _TITLEBAR_OBJECT_NAME:
+                    current_titlebar.deleteLater()
+        except (RuntimeError, AttributeError) as e:
+            self._fallback_error(
+                "CleanLogs.unload",
+                f"Failed to restore title bar: {type(e).__name__}",
+                str(e)
+            )
         finally:
-            # Release references
-            self.custom_btn = None
+            for btn in self._clean_buttons:
+                try:
+                    btn.clicked.disconnect()
+                except TypeError:
+                    pass
+                btn.deleteLater()
+            self._clean_buttons = []
+            self._button_slots = {}
+            self._cleaners = []
             self.close_btn = None
             self.msg_dock = None
             self.original_titlebar = None
-    
-    def clear_log(self):
-        """Execute message log cleanup operation.
-        
-        Clears all tabs in the Message Log widget and displays
-        a status bar confirmation message.
-        """
-        try:
-            # Locate widget
-            msg_widget = MessageLogCleaner.find_message_log_widget()
-            if not msg_widget:
-                return
-            
-            # Clear all tabs
-            for i in range(msg_widget.count()):
-                tab_widget = msg_widget.widget(i)
-                if tab_widget:
-                    MessageLogCleaner.clear_widget_content(tab_widget)
-            
-            # Status feedback
-            self.iface.statusBarIface().showMessage("Log cleared", 2000)
-                
-        except (RuntimeError, AttributeError) as e:
-            self._fallback_error(
-                "CleanLogs.clear_log", 
-                f"Cleanup failed: {type(e).__name__}", 
-                str(e)
-            )
-    
+            self.titlebar_widget = None
+            self._attach_attempts = 0
+
     def _fallback_error(self, source, cause, context=""):
-        """Display structured error message to user.
-        
-        Args:
-            source: Module and function where error occurred.
-            cause: Brief description of the error cause.
-            context: Optional additional context or exception details.
-        """
+        """Display structured error message to user; never silent."""
         msg = f"[{source}] {cause}"
         if context:
             msg += f" | {context}"
-        self.iface.messageBar().pushMessage(
-            "Clean Log", 
-            msg,
-            level=Qgis.Warning, 
-            duration=4
-        )
+        try:
+            message_bar = self.iface.messageBar()
+            if message_bar:
+                message_bar.pushMessage(
+                    "Clean Log",
+                    msg,
+                    level=_WARNING_LEVEL,
+                    duration=4
+                )
+                logger.warning("fallback_error_displayed msg=%s", msg)
+                return
+        except (RuntimeError, AttributeError):
+            pass
+        # Fallback absolu
+        logger.warning("LogCleaner_CRITICAL %s", msg)
