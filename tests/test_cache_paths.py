@@ -1,3 +1,5 @@
+import threading
+
 from core.cache_paths import iter_cache_dirs, resolve_scan_roots
 
 
@@ -90,3 +92,39 @@ def test_iter_reports_same_dir_once_across_roots(profile, add_cache):
     found = list(iter_cache_dirs(roots))
 
     assert found == [str(cache_dir)]
+
+
+def test_iter_prunes_dot_and_artifact_directories(profile, add_cache):
+    for hidden in ('.test-runtime', '.pytest_cache', '.ruff_cache', '.venv', 'outputs', 'livrables'):
+        add_cache(profile.plugins_dir / 'vtt' / hidden / 'sub', 'm.cpython-312.pyc')
+    valid = add_cache(profile.plugins_dir / 'vtt' / 'services', 's.cpython-312.pyc')
+
+    found = list(iter_cache_dirs(resolve_scan_roots(str(profile.plugin_dir))))
+
+    assert found == [str(valid)]
+
+
+def test_iter_respects_cancel_event(profile, add_cache):
+    add_cache(profile.plugins_dir / 'other', 'm.cpython-312.pyc')
+    cancel = threading.Event()
+    cancel.set()
+
+    found = list(iter_cache_dirs(resolve_scan_roots(str(profile.plugin_dir)), cancel))
+
+    assert found == []
+
+
+def test_resolve_scan_roots_merges_extra_roots(profile, tmp_path):
+    extra = tmp_path / 'external_plugins'
+    extra.mkdir()
+
+    roots = resolve_scan_roots(
+        str(profile.plugin_dir),
+        (str(extra), str(profile.python_dir), str(tmp_path / 'missing'))
+    )
+
+    assert roots == (
+        str(profile.python_dir),
+        str(profile.processing_dir),
+        str(extra),
+    )

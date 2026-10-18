@@ -1,4 +1,4 @@
-# Plugin reload script for QGIS console — DEV ONLY
+# Plugin reload script for QGIS console - DEV ONLY
 import sys
 import os
 import shutil
@@ -10,7 +10,7 @@ except ImportError:
     sys.exit(1)
 
 if iface is None:
-    print("ERROR: iface is None — not in a QGIS context")
+    print("ERROR: iface is None - not in a QGIS context")
     sys.exit(1)
 
 # 1. Unload ancien plugin et restaure la titlebar

@@ -23,6 +23,7 @@ class AnimatedCleanButton(QToolButton):
         self.current_frame = 0
         self.total_frames = 25
         self.is_animating = False
+        self._stop_requested = False
 
         base_dir = os.path.join(os.path.dirname(__file__), "..", "assets")
         self.base_path = os.path.join(base_dir, "trash_base.svg")
@@ -83,6 +84,7 @@ class AnimatedCleanButton(QToolButton):
             return
 
         self.is_animating = True
+        self._stop_requested = False
         self.setEnabled(False)  # Bloquer le clic pendant l'animation
         self.current_frame = 0
         self.animation_timer.start()
@@ -114,22 +116,32 @@ class AnimatedCleanButton(QToolButton):
         return QIcon(canvas)
 
     def stop_animation(self):
-        """Arrête l'animation et réinitialise l'icône sans toucher enabled."""
+        """Demande l'arrêt de l'animation à la fin du cycle courant."""
         if not self.is_animating:
+            self.setEnabled(True)
             return
+        self._stop_requested = True
+
+    def abort_animation(self):
+        """Arrête immédiatement l'animation (utilisé lors du déchargement)."""
         self.animation_timer.stop()
         self.setIcon(self.base_icon)
         self.is_animating = False
+        self._stop_requested = False
 
     def _update_icon(self):
         """Met à jour l'icône pour simuler l'ouverture/fermeture du couvercle."""
         self.current_frame += 1
 
         if self.current_frame > self.total_frames:
-            self.animation_timer.stop()
-            self.setIcon(self.base_icon)
-            self.is_animating = False
-            return
+            if self._stop_requested:
+                self.animation_timer.stop()
+                self.setIcon(self.base_icon)
+                self.is_animating = False
+                self._stop_requested = False
+                self.setEnabled(True)
+                return
+            self.current_frame = 1
 
         # Calcul de l'angle (Ouverture jusqu'à 45 degrés, puis fermeture)
         progress = self.current_frame / self.total_frames

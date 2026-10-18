@@ -1,3 +1,5 @@
+import importlib
+import linecache
 import logging
 import os
 import re
@@ -14,6 +16,14 @@ logger = logging.getLogger(__name__)
 _CACHE_NAME_RE = re.compile(r"\.py[co](\.\d+|\.tmp)?$", re.IGNORECASE)
 _MAX_REPORTED_PATHS = 20
 _MAX_LOGGED_SAMPLES = 3
+_RMDIR_RETRY_DELAY_S = 0.005
+
+
+def invalidate_python_caches():
+    """Invalide les caches d'importation et de lignes en mémoire vive."""
+    importlib.invalidate_caches()
+    linecache.clearcache()
+    logger.debug("python_runtime_caches_invalidated target=importlib,linecache")
 
 
 @dataclass
@@ -116,15 +126,23 @@ def _purge_cache_dir(cache_path, succeeded):
 
 
 def _remove_empty_dir(cache_path):
-    """Supprime le dossier de cache devenu vide."""
+    """Supprime le dossier de cache devenu vide, avec reprise sous Windows."""
     try:
+        os.rmdir(cache_path)
+        logger.debug("cache_dir_removed cache_path=%s", cache_path)
+        return True
+    except OSError:
+        pass
+    try:
+        os.chmod(cache_path, stat.S_IWRITE)
+        time.sleep(_RMDIR_RETRY_DELAY_S)
         os.rmdir(cache_path)
     except OSError as exc:
         logger.warning(
             "cache_rmdir_failed cache_path=%s error=%s", cache_path, exc
         )
         return False
-    logger.debug("cache_dir_removed cache_path=%s", cache_path)
+    logger.debug("cache_dir_removed_after_retry cache_path=%s", cache_path)
     return True
 
 
@@ -143,7 +161,7 @@ def _purge_one_dir(cache_path, report):
         if _remove_empty_dir(cache_path):
             report.removed_dirs += 1
             return
-        report.failed_dirs += 1
+        report.kept_dirs += 1
     elif outcome.failed:
         report.failed_dirs += 1
     else:
@@ -169,6 +187,14 @@ def _build_message(report):
     return message
 
 
+def _env_plugin_paths():
+    """Extrait les chemins de plugins définis dans QGIS_PLUGINPATH."""
+    raw = os.environ.get("QGIS_PLUGINPATH", "")
+    if not raw:
+        return ()
+    return tuple(p.strip() for p in raw.split(os.pathsep) if p.strip())
+
+
 class PluginCacheCleaner(Cleaner):
     """Nettoyeur du bytecode Python du profil QGIS courant."""
 
@@ -188,14 +214,17 @@ class PluginCacheCleaner(Cleaner):
     def thread_safe(self):
         return True
 
-    def __init__(self, plugin_path=None):
+    def __init__(self, plugin_path=None, extra_roots=None):
         if plugin_path is None:
             plugin_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            if extra_roots is None:
+                extra_roots = _env_plugin_paths()
         self._plugin_dir = plugin_path
+        self._extra_roots = tuple(extra_roots) if extra_roots else ()
 
-    def clean(self):
+    def clean(self, cancel_event=None):
         t0 = time.perf_counter()
-        roots = resolve_scan_roots(self._plugin_dir)
+        roots = resolve_scan_roots(self._plugin_dir, self._extra_roots)
         logger.debug(
             "cache_clean_start plugin_dir=%s n_roots=%s",
             self._plugin_dir, len(roots)
@@ -204,13 +233,18 @@ class PluginCacheCleaner(Cleaner):
             return self._failure(
                 "Cache: no scan root found for %s" % self._plugin_dir, t0
             )
-        return self._build_result(self._purge_roots(roots), t0)
+        report = self._purge_roots(roots, cancel_event)
+        invalidate_python_caches()
+        return self._build_result(report, t0)
 
     @staticmethod
-    def _purge_roots(roots):
+    def _purge_roots(roots, cancel_event=None):
         """Traite tous les __pycache__ des racines et agrège le rapport."""
         report = _Report()
-        for cache_path in iter_cache_dirs(roots):
+        for cache_path in iter_cache_dirs(roots, cancel_event):
+            if cancel_event is not None and cancel_event.is_set():
+                logger.debug("cache_purge_cancelled found=%s", report.found)
+                break
             report.found += 1
             _purge_one_dir(cache_path, report)
         return report

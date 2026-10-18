@@ -1,6 +1,6 @@
-# Log Cleaner — QGIS Plugin
+# Log Cleaner - QGIS Plugin
 
-**Version 2.2.0**
+**Version 2.2.2**
 
 ## Description
 
@@ -21,10 +21,10 @@ A development productivity tool for QGIS plugin developers. The plugin adds two 
 
 Scan roots are derived from the plugin location, so only the **current profile** is touched:
 
-- `<profile>/python/` — plugins, expressions, `startup.py`
-- `<profile>/processing/` — processing scripts
+- `<profile>/python/` : plugins, expressions, `startup.py`
+- `<profile>/processing/` : processing scripts
 
-Directory junctions and symlinks are followed, which covers plugins mounted from a development repository. Walk loops are cut by `(device, inode)` identity. `.git`, `.hg`, `.svn` and `node_modules` are pruned.
+Directory junctions and symlinks are followed, which covers plugins mounted from a development repository. Walk loops are cut by `(device, inode)` identity. Hidden dot-directories (`.git`, `.venv`, `.pytest_cache`, `.ruff_cache`, `.test-runtime`, etc.) and artifact folders (`node_modules`, `venv`, `env`, `site-packages`, `wheels`, `build`, `dist`, `outputs`, `livrables`, `htmlcov`) are pruned. After bytecode removal, Python's in-memory `importlib` finder caches and `linecache` are invalidated.
 
 ### Safety rules
 
@@ -122,7 +122,7 @@ cd tests
 python -m pytest . -q -p no:cacheprovider
 ```
 
-24 tests cover scan root resolution, junction following, loop cutting, read-only files, locked files, foreign content, legacy `.pyc` protection and report bounds. Run them from the `tests` directory: from the repository root, pytest resolves the parent package and imports `__init__.py`, which requires QGIS.
+30 tests cover scan root resolution, extra plugin roots, dot-directory and artifact pruning, cooperative cancellation, junction following, loop cutting, read-only files, locked files, transient `rmdir` locks, runtime cache invalidation (`importlib` and `linecache`), foreign content, legacy `.pyc` protection and report bounds. Run them from the `tests` directory: from the repository root, pytest resolves the parent package and imports `__init__.py`, which requires QGIS.
 
 The tests are development files and are not part of the published package.
 

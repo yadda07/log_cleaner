@@ -1,9 +1,12 @@
+import linecache
 import os
 import stat
 import sys
+import threading
 
 import pytest
 
+import core.cache_cleaner as cache_cleaner_mod
 from core.cache_cleaner import PluginCacheCleaner
 
 
@@ -181,3 +184,46 @@ def test_junction_target_cache_is_cleaned(profile, add_cache, make_junction, tmp
     assert not cache.exists()
     assert result.removed == 1
     assert result.success is True
+
+
+def test_rmdir_failure_after_all_bytecode_removed_keeps_success(profile, add_cache, monkeypatch):
+    cache = add_cache(profile.plugins_dir / 'other', 'm.cpython-312.pyc')
+    monkeypatch.setattr(cache_cleaner_mod, '_remove_empty_dir', lambda _p: False)
+
+    result = _clean(profile)
+
+    assert not (cache / 'm.cpython-312.pyc').exists()
+    assert result.success is True
+    assert result.errors == 0
+    assert result.message == 'Cache: 1 files, 0 dirs, 1 kept (see Log Messages)'
+
+
+def test_clean_invalidates_runtime_caches(profile, add_cache, monkeypatch):
+    add_cache(profile.plugins_dir / 'other', 'm.cpython-312.pyc')
+    calls = []
+    monkeypatch.setattr(
+        cache_cleaner_mod.importlib,
+        'invalidate_caches',
+        lambda: calls.append('importlib')
+    )
+    monkeypatch.setattr(
+        linecache,
+        'clearcache',
+        lambda: calls.append('linecache')
+    )
+
+    result = _clean(profile)
+
+    assert result.success is True
+    assert calls == ['importlib', 'linecache']
+
+
+def test_clean_respects_cancel_event(profile, add_cache):
+    cache = add_cache(profile.plugins_dir / 'other', 'm.cpython-312.pyc')
+    cancel = threading.Event()
+    cancel.set()
+
+    result = PluginCacheCleaner(str(profile.plugin_dir)).clean(cancel)
+
+    assert cache.exists()
+    assert result.removed == 0

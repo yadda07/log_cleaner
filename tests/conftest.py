@@ -51,7 +51,8 @@ def make_junction():
             pytest.skip('jonction spécifique Windows')
         completed = subprocess.run(
             ['cmd', '/c', 'mklink', '/J', str(link), str(target)],
-            capture_output=True, text=True, timeout=30
+            capture_output=True, text=True, encoding='oem', errors='replace',
+            timeout=30
         )
         if completed.returncode != 0:
             pytest.skip('mklink indisponible: %s' % completed.stdout.strip())

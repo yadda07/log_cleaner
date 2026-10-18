@@ -43,8 +43,11 @@ class Cleaner(ABC):
         return True
 
     @abstractmethod
-    def clean(self):
+    def clean(self, cancel_event=None):
         """Exécute le nettoyage.
+
+        Args:
+            cancel_event: threading.Event optionnel pour arrêt coopératif.
 
         Returns:
             CleanResult: rapport structuré de l'opération.

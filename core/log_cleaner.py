@@ -172,7 +172,7 @@ class MessageLogCleaner(Cleaner):
     def __init__(self, main_window):
         self._main_window = main_window
 
-    def clean(self):
+    def clean(self, cancel_event=None):
         t0 = time.perf_counter()
         widget = find_message_log_widget(self._main_window)
         if not widget:
