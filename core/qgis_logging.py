@@ -21,18 +21,18 @@ _LEVEL_MAP = {
 class _LogBridge(QObject):
     """Relais Qt garantissant l'appel à QgsMessageLog sur le thread principal."""
 
-    message_ready = pyqtSignal(str, str, object)
+    record_ready = pyqtSignal(object, str, object)
 
-    def __init__(self, parent=None):
+    def __init__(self, handler, parent=None):
         super().__init__(parent)
-        self.message_ready.connect(self._write_main_thread, _QUEUED)
+        self._handler = handler
+        self.record_ready.connect(self._write_main_thread, _QUEUED)
 
-    @staticmethod
-    def _write_main_thread(msg, tag, qgis_level):
+    def _write_main_thread(self, record, msg, qgis_level):
         try:
-            QgsMessageLog.logMessage(msg, tag, level=qgis_level)
+            QgsMessageLog.logMessage(msg, self._handler.tag, level=qgis_level)
         except Exception:
-            pass
+            self._handler.handleError(record)
 
 
 class QgisLogHandler(logging.Handler):
@@ -40,8 +40,8 @@ class QgisLogHandler(logging.Handler):
 
     def __init__(self, tag="LogCleaner", level=logging.DEBUG):
         super().__init__(level)
-        self._tag = tag
-        self._bridge = _LogBridge()
+        self.tag = tag
+        self._bridge = _LogBridge(self)
 
     def emit(self, record):
         try:
@@ -49,13 +49,11 @@ class QgisLogHandler(logging.Handler):
             qgis_level = _LEVEL_MAP.get(record.levelno, _QGIS_INFO)
             app = QCoreApplication.instance()
             if app is not None and QThread.currentThread() is not app.thread():
-                self._bridge.message_ready.emit(msg, self._tag, qgis_level)
+                self._bridge.record_ready.emit(record, msg, qgis_level)
             else:
-                QgsMessageLog.logMessage(msg, self._tag, level=qgis_level)
+                QgsMessageLog.logMessage(msg, self.tag, level=qgis_level)
         except Exception:
-            # Ne jamais appeler handleError(record) qui écrit sur sys.stderr :
-            # dans QGIS, sys.stderr déclenche la popup d'exception Python ou vaut None.
-            pass
+            self.handleError(record)
 
 
 def setup_logging():

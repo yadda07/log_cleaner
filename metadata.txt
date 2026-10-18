@@ -11,7 +11,7 @@ changelog=
     2.2.2 - Cache cleaning stability, speed and QGIS 4 thread safety:
         - Prune dot-directories (.test-runtime, .pytest_cache, .ruff_cache, .venv) and build/output artifacts (outputs, livrables, build, dist, venv, wheels) during __pycache__ scan (1000x faster on large dev profiles)
         - Invalidate Python runtime caches (importlib.invalidate_caches and linecache.clearcache) after bytecode cleanup
-        - Marshal QgisLogHandler records emitted from worker threads to the main Qt thread via pyqtSignal and avoid writing to hooked sys.stderr
+        - Marshal QgisLogHandler records emitted from worker threads to the main Qt thread via pyqtSignal
         - Replace lambda QueuedConnections and QThread.terminate() with bound QObject slots and cooperative threading.Event cancellation
         - Retry transient Windows os.rmdir locks and avoid false failure banners when all bytecode files were removed
         - Decouple per-button busy state and synchronize button animations with actual worker completion

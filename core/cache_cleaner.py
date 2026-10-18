@@ -131,8 +131,8 @@ def _remove_empty_dir(cache_path):
         os.rmdir(cache_path)
         logger.debug("cache_dir_removed cache_path=%s", cache_path)
         return True
-    except OSError:
-        pass
+    except OSError as exc:
+        logger.debug("cache_rmdir_retry cache_path=%s error=%s", cache_path, exc)
     try:
         os.chmod(cache_path, stat.S_IWRITE)
         time.sleep(_RMDIR_RETRY_DELAY_S)
