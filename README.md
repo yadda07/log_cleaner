@@ -2,6 +2,14 @@
 
 **Version 2.2.2**
 
+Built by [GEODECI](https://geodeci.xyz), custom GIS solutions and QGIS plugins. Contact: [contact@geodeci.xyz](mailto:contact@geodeci.xyz).
+
+### Besoin d'un plugin sur mesure ?
+
+**FR.** Besoin d'un plugin sur mesure ? GEODECI conçoit des solutions SIG et des plugins QGIS adaptés à votre métier. Écrivez à [contact@geodeci.xyz](mailto:contact@geodeci.xyz) ou rendez-vous sur [geodeci.xyz](https://geodeci.xyz).
+
+**EN.** Need a custom plugin? GEODECI builds GIS solutions and QGIS plugins tailored to your work. Write to [contact@geodeci.xyz](mailto:contact@geodeci.xyz) or visit [geodeci.xyz](https://geodeci.xyz).
+
 ## Description
 
 A development productivity tool for QGIS plugin developers. The plugin adds two animated buttons directly into the Message Log panel title bar: one clears the log tabs, the other removes the compiled Python bytecode cache of the current profile. No toolbar clutter, no menu entry.
