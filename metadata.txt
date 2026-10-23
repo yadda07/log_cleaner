@@ -5,7 +5,7 @@ qgisMaximumVersion=4.99
 description=Development tool that adds clear buttons in the Message Log panel title bar for logs and Python bytecode cache
 about=A productivity tool for QGIS plugin developers. Integrates clear buttons directly into the Message Log dock title bar, enabling rapid log cleanup and removal of the compiled Python bytecode cache of the whole current profile (plugins, expressions, processing scripts) during debugging and testing workflows. Native PyQt implementation with clean unload support.
 version=2.2.2
-author=yadda
+author=Youcef ADDA (GEODECI)
 email=youcef.geodesien@gmail.com
 changelog=
     2.2.2 - Cache cleaning stability, speed and QGIS 4 thread safety:
@@ -48,7 +48,7 @@ deprecated=False
 
 tags=log,clean,utilities,message,journal,interface,cache,developer
 
-homepage=https://github.com/yadda07/log_cleaner
+homepage=https://geodeci.xyz
 
 hasProcessingProvider=no
 server=False
