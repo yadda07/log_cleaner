@@ -48,7 +48,7 @@ deprecated=False
 
 tags=log,clean,utilities,message,journal,interface,cache,developer
 
-homepage=https://github.com/yadda07/log_cleaner
+homepage=https://geodeci.xyz
 
 hasProcessingProvider=no
 server=False
