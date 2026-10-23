@@ -70,6 +70,8 @@ log_cleaner.core.cache_cleaner - WARNING - cache_file_locked path=...\m.cpython-
 
 ## Installation
 
+The plugin is listed on the QGIS plugin repository: https://plugins.qgis.org/plugins/log_cleaner/
+
 1. Install the package from **Plugins > Manage and Install Plugins > Install from ZIP**, or copy the `log_cleaner` folder into your QGIS profile plugins directory
 2. Enable the plugin via **Plugins > Manage and Install Plugins**
 3. Open the Message Log panel: the trash and broom buttons sit in its title bar
@@ -143,4 +145,8 @@ The plugin follows QGIS core development practices:
 - Structured error handling with source, cause, and context reporting
 - Proper resource cleanup with original state restoration
 - Memory-safe reference management
+
+## Credits
+
+Designed and maintained by Youcef ADDA (GEODECI, https://geodeci.xyz). Development is AI-assisted; every release is reviewed and tested by the author.
 
